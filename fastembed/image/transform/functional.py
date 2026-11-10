@@ -1,10 +1,19 @@
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
+from PIL.ExifTags import Base
 
 from fastembed.common.types import NumpyArray
 
 
 def convert_to_rgb(image: Image.Image) -> Image.Image:
+    # Pixels are stored unrotated; the EXIF orientation tag is how the photo is displayed.
+    # A phone picture is embedded sideways until that tag is applied. Orientation 1, and an
+    # absent tag, already match the stored pixels, so those images are left untouched.
+    if image.getexif().get(Base.Orientation, 1) != 1:
+        transposed = ImageOps.exif_transpose(image)
+        if transposed is not None:
+            image = transposed
+
     if image.mode == "RGB":
         return image
 

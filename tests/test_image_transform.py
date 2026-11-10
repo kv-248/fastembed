@@ -1,3 +1,5 @@
+from io import BytesIO
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -88,6 +90,42 @@ def test_normalize_batched_matches_per_image(batch_size: int) -> None:
     per_image = np.stack([normalize(image, mean=mean, std=std) for image in batch])
     assert result.shape == batch.shape
     assert np.array_equal(result, per_image)
+
+
+def test_exif_orientation_is_applied_before_pixels_are_read() -> None:
+    """A photo stores unrotated pixels plus an EXIF orientation, which is how it is displayed.
+
+    Orientation 6 is a 90 degree clockwise rotation: the stored top-left pixel is shown at
+    the top-right, and the height and width swap.
+    """
+    stored = Image.new("RGB", (4, 2), (0, 0, 255))
+    stored.putpixel((0, 0), (255, 0, 0))
+    exif = stored.getexif()
+    exif[274] = 6
+    encoded = BytesIO()
+    stored.save(encoded, format="PNG", exif=exif)
+    opened = Image.open(BytesIO(encoded.getvalue()))
+
+    processor = Compose.from_config(
+        {"do_resize": False, "do_center_crop": False, "do_rescale": False}
+    )
+    result = np.asarray(processor([opened]))
+
+    assert result.shape == (1, 3, 4, 2)
+    assert tuple(result[0, :, 0, -1]) == (255, 0, 0)
+    assert tuple(result[0, :, 0, 0]) == (0, 0, 255)
+
+
+def test_image_without_exif_orientation_keeps_its_pixels() -> None:
+    stored = Image.new("RGB", (4, 2), (0, 0, 255))
+    stored.putpixel((0, 0), (255, 0, 0))
+    processor = Compose.from_config(
+        {"do_resize": False, "do_center_crop": False, "do_rescale": False}
+    )
+
+    result = np.asarray(processor([stored]))
+
+    np.testing.assert_array_equal(result[0], np.asarray(stored).transpose(2, 0, 1))
 
 
 def test_normalize_rejects_input_without_a_channel_axis() -> None:
