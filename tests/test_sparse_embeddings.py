@@ -364,6 +364,37 @@ def test_stopword_precedence(
     assert model._stem(["THE", "and", "FOX"]) == expected
 
 
+def test_punctuated_stopwords_are_removed_before_splitting() -> None:
+    """Stopwords that contain punctuation must not be indexed as the pieces left after it is stripped.
+
+    Greek ``δ'`` and Romanian ``printr-`` are stopwords. Removing the apostrophe or hyphen first
+    leaves ``δ`` and ``printr``, which are not stopwords, so both used to be embedded.
+    """
+    greek = Bm25("Qdrant/bm25", language="greek")
+    assert next(iter(greek.embed("δ'"))).indices.size == 0
+    assert next(iter(greek.embed("δ’"))).indices.size == 0
+    plain = next(iter(greek.embed("αυτό άλλο")))
+    with_stopword = next(iter(greek.embed("αυτό δ' άλλο")))
+    with_curly = next(iter(greek.embed("αυτό δ’ άλλο")))
+    assert with_stopword.indices.tolist() == plain.indices.tolist()
+    assert with_curly.indices.tolist() == plain.indices.tolist()
+    assert with_stopword.values.tolist() == pytest.approx(plain.values.tolist())
+    plain_query = next(iter(greek.query_embed("αυτό άλλο")))
+    assert next(iter(greek.query_embed("αυτό δ' άλλο"))).indices.tolist() == (
+        plain_query.indices.tolist()
+    )
+
+    romanian = Bm25("Qdrant/bm25", language="romanian")
+    assert next(iter(romanian.embed("printr-"))).indices.size == 0
+    carte = next(iter(romanian.embed("carte")))
+    prefixed = next(iter(romanian.embed("printr-o carte")))
+    assert prefixed.indices.tolist() == carte.indices.tolist()
+    assert prefixed.values.tolist() == pytest.approx(carte.values.tolist())
+    assert next(iter(romanian.query_embed("printr-o carte"))).indices.tolist() == (
+        next(iter(romanian.query_embed("carte"))).indices.tolist()
+    )
+
+
 def test_unsupported_language_requires_custom_or_disabled_stemmer() -> None:
     with pytest.raises(ValueError, match="polish language is not supported"):
         Bm25("Qdrant/bm25", language="polish", stopwords=set())

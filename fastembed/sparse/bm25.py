@@ -1,4 +1,6 @@
 import os
+import re
+import unicodedata
 from collections import defaultdict
 from multiprocessing import get_all_start_methods
 from pathlib import Path
@@ -30,6 +32,10 @@ class Stemmer(Protocol):
     """
 
     def stem_word(self, word: str) -> str: ...
+
+
+# Stopword files use ASCII apostrophes; text often uses a typographic one.
+_APOSTROPHE_TRANSLATION = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'"})
 
 
 supported_languages = [
@@ -109,7 +115,9 @@ class Bm25(SparseTextEmbeddingBase):
             pickleable, with its class defined in an importable module. Defaults to None.
         stopwords (set[str], optional): Inline stopwords to use instead of the stopwords file
             shipped with the model for the chosen language. Words are lowercased and matched
-            before stemming. None uses the default stopwords; an empty set disables filtering.
+            before stemming. Entries that contain punctuation, such as Greek ``δ'`` or Romanian
+            ``printr-``, are removed before that punctuation is stripped. None uses the default
+            stopwords; an empty set disables filtering.
     Raises:
         ValueError: If a default stemmer is unavailable for the language, or stemmer is supplied with
             disable_stemmer=True.
@@ -284,6 +292,31 @@ class Bm25(SparseTextEmbeddingBase):
             specific_model_path=self._specific_model_path,
         )
 
+    def _strip_punctuated_stopwords(self, text: str) -> str:
+        """Remove stopwords that contain punctuation before punctuation is stripped.
+
+        ``remove_non_alphanumeric`` deletes the apostrophe in ``δ'`` and the hyphen in
+        ``printr-``. The leftovers (``δ``, ``printr``) are not themselves stopwords, so those
+        entries of the stopword list would never match. A stopword that ends in punctuation
+        may be a prefix (``printr-o``), so it does not require a word character boundary after it.
+        """
+        stopwords = {
+            word.translate(_APOSTROPHE_TRANSLATION)
+            for word in self.stopwords
+            if any(unicodedata.category(character).startswith("P") for character in word)
+        }
+        if not stopwords:
+            return text
+
+        text = text.translate(_APOSTROPHE_TRANSLATION)
+        alternatives: list[str] = []
+        for stopword in sorted(stopwords, key=len, reverse=True):
+            pattern = rf"(?<!\w){re.escape(stopword)}"
+            if stopword[-1].isalnum():
+                pattern += r"(?!\w)"
+            alternatives.append(pattern)
+        return re.sub("|".join(alternatives), " ", text, flags=re.IGNORECASE)
+
     def _stem(self, tokens: list[str]) -> list[str]:
         stemmed_tokens: list[str] = []
         for token in tokens:
@@ -312,7 +345,7 @@ class Bm25(SparseTextEmbeddingBase):
     ) -> list[SparseEmbedding]:
         embeddings: list[SparseEmbedding] = []
         for document in documents:
-            document = remove_non_alphanumeric(document)
+            document = remove_non_alphanumeric(self._strip_punctuated_stopwords(document))
             tokens = self.tokenizer.tokenize(document)
             stemmed_tokens = self._stem(tokens)
             token_id2value = self._term_frequency(stemmed_tokens)
@@ -370,7 +403,7 @@ class Bm25(SparseTextEmbeddingBase):
             query = [query]
 
         for text in query:
-            text = remove_non_alphanumeric(text)
+            text = remove_non_alphanumeric(self._strip_punctuated_stopwords(text))
             tokens = self.tokenizer.tokenize(text)
             stemmed_tokens = self._stem(tokens)
             token_ids = np.array(
