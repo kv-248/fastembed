@@ -1,10 +1,13 @@
 import os
 from contextlib import contextmanager
+from typing import Any, Iterable
 
 import numpy as np
 import pytest
 
+from fastembed.common.onnx_model import OnnxOutputContext
 from fastembed.rerank.cross_encoder import TextCrossEncoder
+from fastembed.rerank.cross_encoder.onnx_text_model import OnnxCrossEncoderModel
 from tests.utils import delete_model_cache, is_manual_run, should_test_model
 
 CANONICAL_SCORE_VALUES = {
@@ -25,6 +28,58 @@ CANONICAL_SCORE_VALUES = {
 
 _MODELS_TO_CACHE = ("Xenova/ms-marco-MiniLM-L-6-v2",)
 MODELS_TO_CACHE = tuple([x.lower() for x in _MODELS_TO_CACHE])
+
+
+class _RecordingReranker(OnnxCrossEncoderModel):
+    """Runs the real rerank batching without loading an ONNX model."""
+
+    def __init__(self) -> None:
+        self.batches: list[list[str]] = []
+
+    def load_onnx_model(self) -> None:
+        return None
+
+    def _token_count(
+        self, pairs: Iterable[tuple[str, str]], batch_size: int = 1024, **_: Any
+    ) -> int:
+        return sum(len(document) for _, document in pairs)
+
+    def onnx_embed(self, query: str, documents: list[str], **kwargs: Any) -> OnnxOutputContext:
+        self.batches.append(list(documents))
+        return OnnxOutputContext(model_output=np.arange(len(documents), dtype=np.float32))
+
+    def _post_process_onnx_output(
+        self, output: OnnxOutputContext, **kwargs: Any
+    ) -> Iterable[float]:
+        return (float(score) for score in output.model_output)
+
+
+def test_rerank_treats_a_string_as_one_document() -> None:
+    """A document string must be scored once, not once per character.
+
+    ``embed`` accepts one string as one text. ``rerank`` used to iterate the string, so
+    ``rerank(query, "paris")`` returned five scores.
+    """
+    reranker = _RecordingReranker()
+
+    scores = list(reranker._rerank_documents("where is paris?", "paris", batch_size=64))
+
+    assert reranker.batches == [["paris"]]
+    assert scores == [0.0]
+
+    empty = _RecordingReranker()
+    assert list(empty._rerank_documents("query", "", batch_size=64)) == [0.0]
+    assert empty.batches == [[""]]
+
+
+def test_rerank_still_scores_each_string_in_a_list() -> None:
+    reranker = _RecordingReranker()
+
+    # Equal lengths keep input order; length sorting only reorders different lengths.
+    scores = list(reranker._rerank_documents("query", ["paris", "tokyo"], batch_size=64))
+
+    assert reranker.batches == [["paris", "tokyo"]]
+    assert scores == [0.0, 1.0]
 
 
 @pytest.fixture(scope="module")

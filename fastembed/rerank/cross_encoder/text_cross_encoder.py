@@ -85,13 +85,13 @@ class TextCrossEncoder(TextCrossEncoderBase):
         )
 
     def rerank(
-        self, query: str, documents: Iterable[str], batch_size: int = 64, **kwargs: Any
+        self, query: str, documents: str | Iterable[str], batch_size: int = 64, **kwargs: Any
     ) -> Iterable[float]:
-        """Rerank a list of documents based on a query.
+        """Rerank documents based on a query.
 
         Args:
             query: Query to rerank the documents against
-            documents: Iterator of documents to rerank
+            documents: One document, or an iterator of documents to rerank
             batch_size: Batch size for reranking
 
         Returns:

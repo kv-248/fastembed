@@ -175,17 +175,13 @@ class OnnxTextCrossEncoder(TextCrossEncoderBase, OnnxCrossEncoderModel):
         )
 
     def rerank(
-        self,
-        query: str,
-        documents: Iterable[str],
-        batch_size: int = 64,
-        **kwargs: Any,
+        self, query: str, documents: str | Iterable[str], batch_size: int = 64, **kwargs: Any
     ) -> Iterable[float]:
-        """Reranks documents based on their relevance to a given query.
+        """Rerank documents based on their relevance to a given query.
 
         Args:
             query (str): The query string to which document relevance is calculated.
-            documents (Iterable[str]): Iterable of documents to be reranked.
+            documents (str | Iterable[str]): One document, or the documents to rerank.
             batch_size (int, optional): The number of documents processed in each batch. Higher batch sizes improve speed
                                         but require more memory. Default is 64.
         Returns:

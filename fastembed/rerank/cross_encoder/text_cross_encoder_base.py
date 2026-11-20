@@ -20,15 +20,15 @@ class TextCrossEncoderBase(ModelManagement[BaseModelDescription]):
     def rerank(
         self,
         query: str,
-        documents: Iterable[str],
+        documents: str | Iterable[str],
         batch_size: int = 64,
         **kwargs: Any,
     ) -> Iterable[float]:
-        """Rerank a list of documents given a query.
+        """Rerank documents given a query.
 
         Args:
             query (str): The query to rerank the documents.
-            documents (Iterable[str]): The list of texts to rerank.
+            documents (str | Iterable[str]): One document, or the documents to rerank.
             batch_size (int): The batch size to use for reranking.
             **kwargs: Additional keyword argument to pass to the rerank method.
 

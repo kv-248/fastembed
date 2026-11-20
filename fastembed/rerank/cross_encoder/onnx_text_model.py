@@ -94,8 +94,12 @@ class OnnxCrossEncoderModel(OnnxModel[float]):
         return OnnxOutputContext(model_output=scores)
 
     def _rerank_documents(
-        self, query: str, documents: Iterable[str], batch_size: int, **kwargs: Any
+        self, query: str, documents: str | Iterable[str], batch_size: int, **kwargs: Any
     ) -> Iterable[float]:
+        # A string is one document. Iterating it would score each character on its own,
+        # while embed() treats that same string as a single text.
+        if isinstance(documents, str):
+            documents = [documents]
         if not hasattr(self, "model") or self.model is None:
             self.load_onnx_model()
         yield from restore_order(

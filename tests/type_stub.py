@@ -44,6 +44,7 @@ late_interaction_embedder.passage_embed(texts=[""], parallel=None)
 reranker.list_supported_models()
 reranker.rerank(query="", documents=[""], batch_size=1, parallel=1)
 reranker.rerank(query="", documents=[""], parallel=None)
+reranker.rerank(query="", documents="")
 reranker.rerank_pairs(pairs=[("", "")], batch_size=1, parallel=1)
 reranker.rerank_pairs(pairs=[("", "")], parallel=None)
 
